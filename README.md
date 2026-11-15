@@ -1,5 +1,7 @@
 # CO2 Tanks
 
+**[▶ Jouer dans le navigateur](https://ghoster-001.github.io/CO2-Tanks/)**
+
 Jeu de chars en labyrinthe, style arcade rétro. Un seul fichier HTML, sans dépendance (hors polices Google Fonts).
 Le dernier char en vie gagne la manche ; les balles rebondissent sur les murs.
 
