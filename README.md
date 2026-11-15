@@ -14,7 +14,7 @@ Le dernier char en vie gagne la manche ; les balles rebondissent sur les murs.
 
 **En ligne** (voir la remarque plus bas)
 - **Adversaire aléatoire** : appariement automatique, grille tirée au sort.
-- **Héberger** : code à 4 caractères, 2 à 10 joueurs, grille jusqu'à Géant (36×24).
+- **Héberger** : code à 4 caractères, 2 à 10 joueurs, grille jusqu'à Géant (48×24).
 - **Rejoindre** : saisir le code de l'hôte.
 
 Les chars apparaissent toujours le plus loin possible les uns des autres.

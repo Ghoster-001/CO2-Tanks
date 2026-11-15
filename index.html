@@ -56,8 +56,8 @@
   .actions{display:flex;flex-wrap:wrap;gap:14px;margin-top:28px}
   .actions .btn{--ac:var(--green);flex:1 1 200px}
   .actions .btn.ghost{--ac:var(--yellow);flex:0 1 auto}
-  #app.wide{max-width:none}
-  #game{width:min(100%,calc((100vh - 125px) * 660 / 540));min-width:min(100%,320px);margin:0 auto}
+  #app.wide{max-width:none;min-height:calc(100vh - 40px);display:flex;align-items:center;justify-content:center}
+  #game{width:min(100%,calc((100vh - 130px) * 16 / 9));margin:0 auto}
   #screen{position:relative;border:4px solid var(--cyan);box-shadow:0 0 0 4px #000,0 0 28px rgba(61,245,255,.35),6px 6px 0 4px #000;background:var(--bg)}
   #screen::after{content:"";position:absolute;inset:0;pointer-events:none;
     background:repeating-linear-gradient(to bottom,rgba(0,0,0,.22) 0 1px,transparent 1px 3px),radial-gradient(ellipse at center,transparent 60%,rgba(0,0,0,.45) 100%)}
@@ -117,9 +117,9 @@ const $ = id => document.getElementById(id);
 const cv = $('c'), ctx = cv.getContext('2d');
 
 // ---------- Constantes ----------
-const GW = 660, GH = 540;                              // taille logique du canevas
+const GW = 1280, GH = 720, HUD_Y = GH-88;                              // taille logique du canevas
 const CS = 48, WT = 4, PAD = 10;                       // taille d'une cellule, épaisseur des murs, marge du rendu du labyrinthe
-const VP = {x:18, y:10, w:624, h:432};                 // fenêtre de l'arène dans le canevas
+const VP = {x:20, y:16, w:1240, h:HUD_Y-32};                 // fenêtre de l'arène dans le canevas
 const TANK_R = 11, TANK_SPEED = 2.2, TURN = 0.065;
 const BUL_SPEED = 3.4, BUL_R = 3, BUL_LIFE = 60*7, MAX_BULLETS = 5;
 const PX = '"Press Start 2P", ui-monospace, monospace', VT = '"VT323", ui-monospace, monospace';
@@ -134,11 +134,11 @@ const PAL = COLOR_HEX.map(c => ({color:c, dark:shade(c,-.55), light:shade(c,.55)
 
 // Tailles de grille (colonnes × lignes)
 const SIZES = [
-  {k:'P',  n:'Petit',      c:9,  r:7},
-  {k:'M',  n:'Moyen',      c:13, r:9},
-  {k:'G',  n:'Grand',      c:18, r:12},
-  {k:'TG', n:'Très grand', c:26, r:17},
-  {k:'XL', n:'Géant',      c:36, r:24},
+  {k:'P',  n:'Petit',      c:12, r:6},
+  {k:'M',  n:'Moyen',      c:18, r:9},
+  {k:'G',  n:'Grand',      c:24, r:12},
+  {k:'TG', n:'Très grand', c:34, r:17},
+  {k:'XL', n:'Géant',      c:48, r:24},
 ];
 const SIZE = Object.fromEntries(SIZES.map(s=>[s.k,s]));
 const fitOf = s => Math.min(VP.w/(s.c*CS), VP.h/(s.r*CS));
@@ -762,7 +762,7 @@ function drawTank(t, x, y, a, scale=1, dead=false){
 function updateView(){
   const fit = Math.min(VP.w/WW, VP.h/WH);
   view.cam = myIdx>=0 && fit<0.7;
-  const s = view.cam ? 0.8 : Math.min(fit,1.3);
+  const s = view.cam ? 1.0 : Math.min(fit,2.2);
   view.s = s;
   if (view.cam){
     let f = tanks[myIdx];
@@ -773,13 +773,13 @@ function updateView(){
   } else { view.x = -(VP.w/s-WW)/2; view.y = -(VP.h/s-WH)/2; }
 }
 function drawHud(){
-  ctx.fillStyle='#0e0e2a'; ctx.fillRect(0,452,GW,88);
-  ctx.fillStyle='#ff3d9a'; ctx.fillRect(0,452,GW,2);
+  ctx.fillStyle='#0e0e2a'; ctx.fillRect(0,HUD_Y,GW,88);
+  ctx.fillStyle='#ff3d9a'; ctx.fillRect(0,HUD_Y,GW,2);
   const ht = tanks.filter(t=>t.present), n = ht.length;
   ctx.textBaseline='middle';
   if (n<=3){
-    const by = 488;
-    const xs = n===3 ? [110,330,550] : n===2 ? [150,510] : [330], ang = n===3 ? [0,-Math.PI/2,Math.PI] : n===2 ? [0,Math.PI] : [0];
+    const by = HUD_Y+44;
+    const xs = n===3 ? [GW*.2,GW*.5,GW*.8] : n===2 ? [GW*.27,GW*.73] : [GW*.5], ang = n===3 ? [0,-Math.PI/2,Math.PI] : n===2 ? [0,Math.PI] : [0];
     ht.forEach((t,i)=>{
       drawTank(t, xs[i], by, ang[i], 1.8);
       const left = n>1 && i===n-1, tx = xs[i]+(left?-42:42), v = String(score[t.i]??0);
@@ -793,7 +793,7 @@ function drawHud(){
     const perRow = Math.ceil(n/2), cw = GW/perRow;
     ht.forEach((t,i)=>{
       const row = i<perRow?0:1, col = row? i-perRow : i;
-      const x0 = col*cw, y = 476+row*36;
+      const x0 = col*cw, y = HUD_Y+26+row*36;
       drawTank(t, x0+22, y, 0, 1);
       const v = String(score[t.i]??0);
       ctx.font='14px '+PX; ctx.textAlign='left';
@@ -805,7 +805,7 @@ function drawHud(){
   }
 }
 function drawMiniMap(){
-  const mw = 130, mh = Math.max(40, Math.min(110, mw*WH/WW));
+  const mw = 200, mh = Math.max(50, Math.min(170, mw*WH/WW));
   // la mini-carte change de coin quand ton char s'en approche
   const corners = [[VP.x+VP.w-mw-8, VP.y+8],[VP.x+8, VP.y+8],[VP.x+VP.w-mw-8, VP.y+VP.h-mh-8],[VP.x+8, VP.y+VP.h-mh-8]];
   const f = tanks[myIdx];
@@ -857,24 +857,24 @@ function draw(){
   if (state==='end'){
     const w = tanks.filter(t=>t.active&&t.alive);
     const txt = w.length===1 ? 'POINT : '+w[0].label.toUpperCase() : 'MATCH NUL';
-    ctx.font='13px '+PX; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.font='16px '+PX; ctx.textAlign='center'; ctx.textBaseline='middle';
     const tw = Math.min(ctx.measureText(txt).width+40, VP.w-20);
-    ctx.fillStyle='rgba(10,10,28,.88)'; ctx.fillRect(cx-tw/2,VP.y+8,tw,34);
-    ctx.strokeStyle = w.length===1 ? w[0].p.color : '#ffe14d'; ctx.lineWidth=2; ctx.strokeRect(cx-tw/2,VP.y+8,tw,34);
-    ctx.fillStyle='#ffe14d'; ctx.fillText(txt, cx, VP.y+26, tw-20);
+    ctx.fillStyle='rgba(10,10,28,.88)'; ctx.fillRect(cx-tw/2,VP.y+8,tw,42);
+    ctx.strokeStyle = w.length===1 ? w[0].p.color : '#ffe14d'; ctx.lineWidth=2; ctx.strokeRect(cx-tw/2,VP.y+8,tw,42);
+    ctx.fillStyle='#ffe14d'; ctx.fillText(txt, cx, VP.y+30, tw-20);
   }
   if (banner){
-    const bw=VP.w-160, bh=VP.h-180, bx=cx-bw/2, by=cy-bh/2;
+    const bw=Math.min(760,VP.w-160), bh=Math.min(380,VP.h-100), bx=cx-bw/2, by=cy-bh/2;
     ctx.fillStyle='rgba(10,10,28,.93)'; ctx.fillRect(bx,by,bw,bh);
     ctx.shadowColor='#3df5ff'; ctx.shadowBlur=12; ctx.strokeStyle='#3df5ff'; ctx.lineWidth=3; ctx.strokeRect(bx,by,bw,bh); ctx.shadowBlur=0;
     ctx.textAlign='center'; ctx.textBaseline='middle';
-    const lh = 38, y0 = cy-(banner.length-1)*lh/2;
+    const lh = 50, y0 = cy-(banner.length-1)*lh/2;
     banner.forEach((line,i)=>{
       const big = /^[A-Z0-9]{4}$/.test(line);
-      if (big){ ctx.font='42px '+PX; ctx.fillStyle='#ff3d9a'; }
-      else if (i===0){ ctx.font='13px '+PX; ctx.fillStyle='#ffe14d'; }
-      else { ctx.font='22px '+VT; ctx.fillStyle='#e8e8ff'; }
-      ctx.fillText(line, cx, y0+i*lh+(big?6:0), bw-30);
+      if (big){ ctx.font='60px '+PX; ctx.fillStyle='#ff3d9a'; }
+      else if (i===0){ ctx.font='17px '+PX; ctx.fillStyle='#ffe14d'; }
+      else { ctx.font='30px '+VT; ctx.fillStyle='#e8e8ff'; }
+      ctx.fillText(line, cx, y0+i*lh+(big?8:0), bw-40);
     });
   }
 }
