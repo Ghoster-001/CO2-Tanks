@@ -109,6 +109,7 @@
   </section>
 </div>
 
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 const cv = $('c'), ctx = cv.getContext('2d');
@@ -614,7 +615,11 @@ function startQueue(){
   if (!lobby) return;
   nav++; net=null;
   showView('game'); emptyArena(); state='wait'; setHelp('');
-  mm = {count:1, unsub:null, timer:null};
+  mm = {count:1, unsub:null, timer:null, conn:null};
+  if (lobby.ensure){
+    lobby.ensure().catch(()=>{});
+    mm.conn = setTimeout(() => { if (mm && !lobby.connected()) exitToMenu('Connexion au service en ligne impossible.'); }, 15000);
+  }
   lobby.presence({q:1, t:Date.now(), offer:null, rm:null}).catch(()=>{});
   mm.unsub = lobby.onPeers(mmTick);
   mm.timer = setInterval(mmTick, 700);
@@ -622,7 +627,7 @@ function startQueue(){
 }
 function stopQueue(clear){
   if (!mm) return;
-  clearInterval(mm.timer); try{ mm.unsub&&mm.unsub(); }catch(e){}
+  clearInterval(mm.timer); clearTimeout(mm.conn); try{ mm.unsub&&mm.unsub(); }catch(e){}
   mm = null;
   if (clear && lobby) lobby.presence({q:0, offer:null, rm:null}).catch(()=>{});
 }
@@ -890,17 +895,138 @@ document.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click'
 $('back').addEventListener('click', () => exitToMenu(''));
 cv.addEventListener('pointerdown', () => cv.focus());
 
-function setOnline(ok){
+// ---------- Transport réseau de secours : WebRTC (PeerJS) ----------
+// Sur claude.ai, le jeu utilise le canal "room" de la page. Ailleurs (GitHub Pages, fichier local),
+// ce mini-équivalent relie les joueurs par WebRTC : le premier arrivé dans un salon en devient le relais,
+// les autres s'y connectent. Il offre les mêmes appels que "room" : presence, peers, onPeers, join, leave.
+const PEER_OPTS = window.CO2_PEER_OPTS || {};
+const rid = () => Math.random().toString(36).slice(2,10) + Math.random().toString(36).slice(2,6);
+function createPeerRoom(name){
+  const me = rid(), hubId = 'co2tanks-v1-' + name;
+  const map = new Map([[me, {}]]);
+  let mine = {}, dirty = false, left = false, peer = null, upstream = null, connected = false;
+  const down = new Map(), changed = new Set(), gone = new Set(), hs = [];
+  const list = () => [...map].map(([pr,presence]) => ({peer:pr, presence, sameTab:pr===me, isMe:pr===me, kind:'viewer', guest:false}));
+  const emit = () => { if (!hs.length) return; const snap = list(); hs.slice().forEach(h => { try{ h({peers:snap,joined:[],left:[],updated:[]}); }catch(e){} }); };
+  const onClientData = d => {
+    if (!d) return;
+    if (d.t==='u'){ for (const k in d.u) if (k!==me) map.set(k,d.u[k]); emit(); }
+    else if (d.t==='l'){ for (const k of d.l) map.delete(k); emit(); }
+  };
+  function setupHub(p){
+    p.on('connection', c => {
+      let label = null;
+      c.on('data', d => {
+        if (!d) return;
+        if (d.t==='h'){
+          label = d.l; down.set(label, c);
+          const u = {}; for (const [k,v] of map) u[k] = v;
+          try{ c.send({t:'u', u}); }catch(e){}
+        } else if (d.t==='p' && label){ map.set(label, d.p); changed.add(label); emit(); }
+      });
+      c.on('close', () => { if (label){ down.delete(label); map.delete(label); gone.add(label); emit(); } });
+    });
+  }
+  const timer = setInterval(() => {
+    if (left) return;
+    if (upstream){
+      if (dirty && upstream.open){ try{ upstream.send({t:'p', p:mine}); dirty=false; }catch(e){} }
+    } else if (down.size && (changed.size || gone.size)){
+      const u = {}; for (const k of changed) if (map.has(k)) u[k] = map.get(k);
+      const msgs = []; if (Object.keys(u).length) msgs.push({t:'u', u}); if (gone.size) msgs.push({t:'l', l:[...gone]});
+      changed.clear(); gone.clear();
+      for (const c of down.values()) if (c.open) for (const m of msgs){ try{ c.send(m); }catch(e){} }
+    } else { changed.clear(); gone.clear(); }
+  }, 33);
+  function connect(){
+    return new Promise((resolve, reject) => {
+      let settled = false, tries = 0;
+      const done = (ok, err) => { if (settled) return; settled = true; ok ? resolve() : reject(err); };
+      const to = setTimeout(() => done(false, new Error('timeout')), 12000);
+      const retry = err => {
+        if (left) return;
+        if (!settled && ++tries>8){ clearTimeout(to); done(false, err); return; }
+        setTimeout(attempt, 500 + Math.random()*700);
+      };
+      function asClient(){
+        const p = new Peer(PEER_OPTS);
+        p.on('open', () => {
+          const c = p.connect(hubId, {reliable:true, serialization:'json'});
+          c.on('open', () => { peer = p; upstream = c; connected = true; c.send({t:'h', l:me}); dirty = true; clearTimeout(to); done(true); });
+          c.on('data', onClientData);
+          c.on('close', () => {
+            upstream = null; connected = false;
+            for (const k of [...map.keys()]) if (k!==me) map.delete(k);
+            emit(); try{ p.destroy(); }catch(e){}
+            if (!left) setTimeout(attempt, 300 + Math.random()*700);
+          });
+        });
+        p.on('error', err => { try{ p.destroy(); }catch(e){} retry(err); });
+      }
+      function attempt(){
+        if (left) return;
+        const p = new Peer(hubId, PEER_OPTS);
+        p.on('open', () => { peer = p; connected = true; setupHub(p); changed.add(me); clearTimeout(to); done(true); });
+        p.on('error', err => {
+          try{ p.destroy(); }catch(e){}
+          if (err && err.type==='unavailable-id') asClient(); else retry(err);
+        });
+      }
+      attempt();
+    });
+  }
+  const api = {
+    peers: list,
+    onPeers(h){ hs.push(h); return () => { const i=hs.indexOf(h); if (i>=0) hs.splice(i,1); }; },
+    presence(patch){
+      mine = {...mine};
+      for (const k in patch){ if (patch[k]===null) delete mine[k]; else mine[k] = patch[k]; }
+      map.set(me, mine); dirty = true; changed.add(me); emit();
+      return Promise.resolve();
+    },
+    leave(){
+      left = true; clearInterval(timer);
+      try{ if (upstream) upstream.close(); }catch(e){}
+      try{ if (peer) peer.destroy(); }catch(e){}
+      return Promise.resolve();
+    },
+    connected: () => connected,
+  };
+  return {connect, api};
+}
+function createPeerLobby(){
+  let r = null, pending = null;
+  const ensure = () => {
+    if (!pending){ r = createPeerRoom('lobby'); pending = r.connect().catch(e => { try{ r.api.leave(); }catch(x){} r = null; pending = null; throw e; }); }
+    return pending;
+  };
+  return {
+    ensure,
+    connected: () => !!(r && r.api.connected()),
+    join: async name => { const x = createPeerRoom('r-'+name); try{ await x.connect(); } catch(e){ x.api.leave(); throw e; } return x.api; },
+    presence: p => r ? r.api.presence(p) : Promise.resolve(),
+    peers: () => r ? r.api.peers() : [],
+    onPeers: h => { ensure().catch(()=>{}); return r ? r.api.onPeers(h) : (()=>{}); },
+  };
+}
+
+function setOnline(ok, kind){
   document.querySelectorAll('.online').forEach(el => el.disabled = !ok);
   $('onnote').textContent = ok
-    ? "Seules les personnes qui ont accès à cette page peuvent se retrouver en ligne. Envoie-leur le lien de la page."
-    : "Le mode en ligne n'est pas disponible ici : il faut ouvrir la page avec un compte qui y a accès.";
+    ? (kind==='peer'
+        ? "En ligne par connexion directe entre joueurs (WebRTC). Les joueurs qui ouvrent cette même page se retrouvent entre eux. Certains réseaux d'entreprise ou téléphones peuvent bloquer la connexion."
+        : "Seules les personnes qui ont accès à cette page peuvent se retrouver en ligne. Envoie-leur le lien de la page.")
+    : (kind==='claude'
+        ? "Le mode en ligne n'est pas disponible ici : il faut ouvrir la page avec un compte qui y a accès."
+        : "Le mode en ligne n'est pas disponible : la bibliothèque de connexion n'a pas pu se charger. Les modes hors ligne fonctionnent.");
 }
-try {
-  (window.claude && window.claude.use ? window.claude.use('room') : Promise.resolve(null))
-    .then(r => { lobby = r; setOnline(!!r); })
-    .catch(() => setOnline(false));
-} catch(e){ setOnline(false); }
+(async () => {
+  try {
+    if (window.claude && window.claude.use){ const r = await window.claude.use('room'); lobby = r; setOnline(!!r, 'claude'); }
+    else if (window.Peer){ lobby = createPeerLobby(); setOnline(true, 'peer'); }
+    else setOnline(false, 'none');
+  } catch(e){ setOnline(false, 'none'); }
+})();
 
 requestAnimationFrame(frame);
 </script>

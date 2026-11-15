@@ -2,7 +2,7 @@
 
 **[▶ Jouer dans le navigateur](https://ghoster-001.github.io/CO2-Tanks/)**
 
-Jeu de chars en labyrinthe, style arcade rétro. Un seul fichier HTML, sans dépendance (hors polices Google Fonts).
+Jeu de chars en labyrinthe, style arcade rétro. Un seul fichier HTML (hors polices Google Fonts et bibliothèque PeerJS pour le mode en ligne).
 Le dernier char en vie gagne la manche ; les balles rebondissent sur les murs.
 
 ## Modes
@@ -33,11 +33,21 @@ Les touches suivent la lettre tapée (AZERTY ou QWERTY). Entrée : nouvelle manc
 
 Ouvrir `index.html` dans un navigateur, ou activer GitHub Pages sur la branche `main`.
 
-## Remarque sur le mode en ligne
+## Mode en ligne
 
-Le mode en ligne utilise la capacité `room` des pages publiées sur claude.ai (`window.claude.use("room")`).
-Hors de cette plateforme, par exemple sur GitHub Pages, cette capacité n'existe pas : les boutons en ligne restent grisés et tous les modes hors ligne fonctionnent normalement.
-Pour jouer en ligne ailleurs, il faut remplacer la couche réseau (fonctions `hostPre`, `hostSend`, `guestStep`, `startQueue`) par un autre transport, par exemple WebSocket ou WebRTC.
+Le jeu choisit tout seul son transport réseau :
+
+- **Sur GitHub Pages ou en fichier local** : connexion directe entre joueurs en WebRTC, avec la bibliothèque [PeerJS](https://peerjs.com) (chargée depuis unpkg) et son service de signalisation public gratuit. Le premier joueur arrivé dans un salon en devient le relais, les autres s'y connectent. L'hôte calcule toute la partie, les invités envoient leurs touches et affichent ce qu'il leur renvoie.
+- **Sur une page publiée dans claude.ai** : le canal temps réel `room` de la page, réservé aux personnes qui ont accès à cette page.
+
+Ces deux mondes sont séparés : un hôte sur GitHub Pages ne peut pas être rejoint depuis claude.ai, et inversement.
+
+Limites du transport WebRTC :
+- Le service de signalisation public n'offre aucune garantie de disponibilité.
+- Il n'y a pas de serveur TURN : certains réseaux d'entreprise ou connexions mobiles empêchent la connexion directe.
+- Le jeu est conçu pour des parties entre amis, pas pour des centaines de joueurs.
+
+Pour utiliser votre propre service de signalisation, définissez `window.CO2_PEER_OPTS` avant le chargement du script, par exemple `{host:'mon-serveur', port:443, path:'/peerjs', secure:true}`.
 
 ## Inspiration
 
