@@ -56,6 +56,8 @@
   .actions{display:flex;flex-wrap:wrap;gap:14px;margin-top:28px}
   .actions .btn{--ac:var(--green);flex:1 1 200px}
   .actions .btn.ghost{--ac:var(--yellow);flex:0 1 auto}
+  #app.wide{max-width:none}
+  #game{width:min(100%,calc((100vh - 125px) * 660 / 540));min-width:min(100%,320px);margin:0 auto}
   #screen{position:relative;border:4px solid var(--cyan);box-shadow:0 0 0 4px #000,0 0 28px rgba(61,245,255,.35),6px 6px 0 4px #000;background:var(--bg)}
   #screen::after{content:"";position:absolute;inset:0;pointer-events:none;
     background:repeating-linear-gradient(to bottom,rgba(0,0,0,.22) 0 1px,transparent 1px 3px),radial-gradient(ellipse at center,transparent 60%,rgba(0,0,0,.45) 100%)}
@@ -115,6 +117,7 @@ const $ = id => document.getElementById(id);
 const cv = $('c'), ctx = cv.getContext('2d');
 
 // ---------- Constantes ----------
+const GW = 660, GH = 540;                              // taille logique du canevas
 const CS = 48, WT = 4, PAD = 10;                       // taille d'une cellule, épaisseur des murs, marge du rendu du labyrinthe
 const VP = {x:18, y:10, w:624, h:432};                 // fenêtre de l'arène dans le canevas
 const TANK_R = 11, TANK_SPEED = 2.2, TURN = 0.065;
@@ -170,11 +173,21 @@ const SET_B = {fwd:'ArrowUp', back:'ArrowDown', left:'ArrowLeft', right:'ArrowRi
 
 // ---------- État ----------
 let COLS = 13, ROWS = 9, WW = COLS*CS, WH = ROWS*CS;
-let walls = [], grid = null, mazeCv = null, tanks = [], bullets = [], score = [];
+let mazeRes = 1, walls = [], grid = null, mazeCv = null, tanks = [], bullets = [], score = [];
 let state = 'menu', endTimer = 0, roundT = 0, curSeed = 0, banner = null;
 let net = null, mm = null, lobby = null, nav = 0, myIdx = -1, setupMode = null, mapCorner = 0;
 const view = {s:1, x:0, y:0, cam:false, init:false};
 const keys = {};
+let GW_SCALE = 1;
+function resizeCanvas(){
+  const w = $('screen').clientWidth;
+  if (!w) return;
+  const dpr = Math.min(window.devicePixelRatio||1, 2.5);
+  const pw = Math.round(w*dpr);
+  if (cv.width!==pw){ cv.width = pw; cv.height = Math.round(pw*GH/GW); }
+  GW_SCALE = cv.width/GW;
+  ctx.setTransform(GW_SCALE,0,0,GW_SCALE,0,0);
+}
 function setGridDims(c,r){ COLS=c; ROWS=r; WW=c*CS; WH=r*CS; }
 
 // ---------- Aléatoire à graine (même labyrinthe pour tous en ligne) ----------
@@ -216,9 +229,9 @@ function buildMaze(rng){
 // Le labyrinthe est dessiné une seule fois dans un canevas hors écran
 function renderMazeCanvas(){
   mazeCv = document.createElement('canvas');
-  mazeCv.width = WW+2*PAD; mazeCv.height = WH+2*PAD;
+  mazeCv.width = Math.ceil((WW+2*PAD)*mazeRes); mazeCv.height = Math.ceil((WH+2*PAD)*mazeRes);
   const g = mazeCv.getContext('2d');
-  g.translate(PAD,PAD);
+  g.scale(mazeRes,mazeRes); g.translate(PAD,PAD);
   g.fillStyle='#10102c'; g.fillRect(0,0,WW,WH);
   g.strokeStyle='#1c1c4a'; g.lineWidth=1; g.beginPath();
   for (let c=1;c<COLS;c++){ g.moveTo(c*CS+.5,0); g.lineTo(c*CS+.5,WH); }
@@ -548,7 +561,7 @@ function step(){
 }
 
 // ---------- Écrans ----------
-function showView(v){ $('menu').hidden = v!=='menu'; $('setup').hidden = v!=='setup'; $('game').hidden = v!=='game'; }
+function showView(v){ $('app').classList.toggle('wide', v==='game'); if (v==='game') setTimeout(resizeCanvas,0); $('menu').hidden = v!=='menu'; $('setup').hidden = v!=='setup'; $('game').hidden = v!=='game'; }
 function setHelp(txt){ $('help').textContent = txt; }
 function emptyArena(dims){ const d=dims||SIZE.M; setGridDims(d.c,d.r); tanks=[]; bullets=[]; score=[]; myIdx=-1; buildMaze(rngFrom(newSeed())); view.init=false; }
 
@@ -760,8 +773,8 @@ function updateView(){
   } else { view.x = -(VP.w/s-WW)/2; view.y = -(VP.h/s-WH)/2; }
 }
 function drawHud(){
-  ctx.fillStyle='#0e0e2a'; ctx.fillRect(0,452,cv.width,88);
-  ctx.fillStyle='#ff3d9a'; ctx.fillRect(0,452,cv.width,2);
+  ctx.fillStyle='#0e0e2a'; ctx.fillRect(0,452,GW,88);
+  ctx.fillStyle='#ff3d9a'; ctx.fillRect(0,452,GW,2);
   const ht = tanks.filter(t=>t.present), n = ht.length;
   ctx.textBaseline='middle';
   if (n<=3){
@@ -777,7 +790,7 @@ function drawHud(){
       ctx.fillText(t.label.toUpperCase(), xs[i], by+30);
     });
   } else {
-    const perRow = Math.ceil(n/2), cw = cv.width/perRow;
+    const perRow = Math.ceil(n/2), cw = GW/perRow;
     ht.forEach((t,i)=>{
       const row = i<perRow?0:1, col = row? i-perRow : i;
       const x0 = col*cw, y = 476+row*36;
@@ -804,7 +817,7 @@ function drawMiniMap(){
   }
   const mx = corners[mapCorner][0], my = corners[mapCorner][1];
   ctx.globalAlpha=.85; ctx.fillStyle='#0a0a1c'; ctx.fillRect(mx-2,my-2,mw+4,mh+4); ctx.globalAlpha=.6;
-  ctx.drawImage(mazeCv, PAD, PAD, WW, WH, mx, my, mw, mh); ctx.globalAlpha=1;
+  ctx.drawImage(mazeCv, PAD*mazeRes, PAD*mazeRes, WW*mazeRes, WH*mazeRes, mx, my, mw, mh); ctx.globalAlpha=1;
   ctx.strokeStyle='#3df5ff'; ctx.lineWidth=2; ctx.strokeRect(mx-2,my-2,mw+4,mh+4);
   for (const t of tanks){
     if (!t.active || !t.alive) continue;
@@ -817,14 +830,16 @@ function drawMiniMap(){
   ctx.strokeRect(mx+view.x/WW*mw, my+view.y/WH*mh, VP.w/view.s/WW*mw, VP.h/view.s/WH*mh);
 }
 function draw(){
-  ctx.clearRect(0,0,cv.width,cv.height);
-  ctx.fillStyle='#0a0a1c'; ctx.fillRect(0,0,cv.width,cv.height);
+  ctx.clearRect(0,0,GW,GH);
+  ctx.fillStyle='#0a0a1c'; ctx.fillRect(0,0,GW,GH);
   if (!walls.length || !mazeCv) return;
   updateView();
+  const want = Math.min(Math.max(1, GW_SCALE*view.s), 4096/(Math.max(WW,WH)+2*PAD));
+  if (Math.abs(want/mazeRes-1) > 0.2){ mazeRes = want; renderMazeCanvas(); }
   ctx.save();
   ctx.beginPath(); ctx.rect(VP.x,VP.y,VP.w,VP.h); ctx.clip();
   ctx.translate(VP.x,VP.y); ctx.scale(view.s,view.s); ctx.translate(-view.x,-view.y);
-  ctx.drawImage(mazeCv, -PAD, -PAD);
+  ctx.drawImage(mazeCv, -PAD, -PAD, WW+2*PAD, WH+2*PAD);
   ctx.shadowColor='#ffe14d'; ctx.shadowBlur=10; ctx.fillStyle='#ffffff';
   for (const b of bullets){ ctx.beginPath(); ctx.arc(b.x,b.y,BUL_R,0,7); ctx.fill(); }
   ctx.shadowBlur=0;
@@ -1028,6 +1043,8 @@ function setOnline(ok, kind){
   } catch(e){ setOnline(false, 'none'); }
 })();
 
+addEventListener('resize', resizeCanvas);
+try { new ResizeObserver(resizeCanvas).observe($('screen')); } catch(e){}
 requestAnimationFrame(frame);
 </script>
 
