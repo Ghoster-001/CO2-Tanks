@@ -17,6 +17,8 @@ Le dernier char en vie gagne la manche ; les balles rebondissent sur les murs.
 - **Héberger** : code à 4 caractères, 2 à 10 joueurs, grille jusqu'à Géant (48×24).
 - **Rejoindre** : saisir le code de l'hôte.
 
+Chaque joueur choisit son pseudo (12 caractères), un avatar parmi 21 sprites pixel et la couleur de son char. En ligne, les pseudos et avatars sont visibles par tous.
+
 Les chars apparaissent toujours le plus loin possible les uns des autres.
 Sur les grandes cartes, la caméra suit ton char et une mini-carte s'affiche.
 

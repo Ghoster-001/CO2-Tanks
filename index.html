@@ -53,6 +53,15 @@
   .codebox{font-family:var(--px);font-size:20px;letter-spacing:6px;text-transform:uppercase;text-align:center;width:150px;min-width:0;
     padding:10px;border:3px solid var(--pink);border-radius:0;background:#000;color:var(--yellow);box-shadow:4px 4px 0 #000}
   .codebox::placeholder{color:#55557f}
+  .namebox{font-family:var(--px);font-size:14px;width:min(100%,300px);padding:10px;border:3px solid var(--cyan);border-radius:0;background:#000;color:var(--fg);box-shadow:4px 4px 0 #000;box-sizing:border-box}
+  .namebox::placeholder{color:#55557f}
+  .avs{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+  .av{width:52px;height:52px;border:3px solid var(--line);background:var(--panel);padding:6px;cursor:pointer;box-shadow:3px 3px 0 #000;border-radius:0;box-sizing:border-box}
+  .av canvas{width:100%;height:100%;image-rendering:pixelated;display:block}
+  .av:hover{border-color:var(--cyan)}
+  .av[aria-pressed=true]{border-color:var(--yellow);background:#2a2a6a}
+  .av:focus-visible{outline:3px solid var(--yellow);outline-offset:3px}
+  .swh{font-size:19px;color:var(--muted);margin:14px 0 8px}
   .actions{display:flex;flex-wrap:wrap;gap:14px;margin-top:28px}
   .actions .btn{--ac:var(--green);flex:1 1 200px}
   .actions .btn.ghost{--ac:var(--yellow);flex:0 1 auto}
@@ -132,6 +141,52 @@ function shade(hex, f){ const n=parseInt(hex.slice(1),16); let r=n>>16, g=(n>>8)
   return '#'+((1<<24)|(r<<16)|(g<<8)|b).toString(16).slice(1); }
 const PAL = COLOR_HEX.map(c => ({color:c, dark:shade(c,-.55), light:shade(c,.55)}));
 
+// ---------- Avatars (sprites 8×8) et pseudos ----------
+const AVATARS = [
+  ['..#..#..','...##...','..####..','.##..##.','########','#.####.#','#.#..#.#','...##...'],  // envahisseur
+  ['.######.','########','##.##.##','########','.######.','..####..','..#..#..','..####..'],  // crâne
+  ['...##...','..####..','.######.','##.##.##','########','.######.','.#....#.','##....##'],  // robot
+  ['#......#','##....##','########','#.####.#','########','#.#..#.#','########','.######.'],  // chat
+  ['..####..','.######.','##.##.##','########','########','########','##.##.##','#..##..#'],  // fantôme
+  ['.##..##.','########','########','########','.######.','..####..','...##...','........'],  // coeur
+  ['...##...','...##...','########','.######.','..####..','.######.','.##..##.','.#....#.'],  // étoile
+  ['#..##..#','#..##..#','########','########','########','########','.######.','........'],  // couronne
+  ['..####..','.######.','##.##.##','########','..####..','...##...','..####..','..####..'],  // champignon
+  ['...##...','..####..','..####..','..####..','.######.','.######.','##.##.##','..#..#..'],  // fusée
+  ['.##..##.','########','##.##.##','########','#.####.#','########','.######.','##....##'],  // grenouille
+  ['##....##','########','#.####.#','##.##.##','########','..#..#..','.######.','........'],  // panda
+  ['...#....','..##....','..###.#.','.######.','.######.','########','########','.######.'],  // flamme
+  ['..####..','.######.','########','.######.','..####..','...##...','...##...','........'],  // gemme
+  ['....###.','...###..','..###...','.######.','...###..','..###...','.##.....','.#......'],  // éclair
+  ['.######.','########','#.####.#','########','#.#..#.#','##.##.##','########','.######.'],  // sourire
+  ['..####..','.##.....','##......','##......','##......','.##.....','..####..','........'],  // lune
+  ['.....##.','....##..','..####..','.######.','########','########','.######.','..####..'],  // bombe
+  ['........','...###..','.######.','########','#.#.#.#.','########','........','........'],  // char
+  ['##....##','###..###','########','.##..##.','.##..##.','########','###..###','##....##'],  // papillon
+  ['#..##..#','.#.##.#.','..####..','########','########','..####..','.#.##.#.','#..##..#'],  // soleil
+];
+AVATARS.forEach(a => { if (a.length!==8 || a.some(r=>r.length!==8)) throw new Error('avatar 8x8'); });
+const BOT_AVS = [2,0,1,18,17,4,12,14,13,9];
+const SPR = {};
+function sprite(i, color){
+  const k = i+color;
+  if (!SPR[k]){
+    const c = document.createElement('canvas'); c.width = c.height = 8;
+    const g = c.getContext('2d'); g.fillStyle = color;
+    AVATARS[i].forEach((row,y) => { for (let x=0;x<8;x++) if (row[x]==='#') g.fillRect(x,y,1,1); });
+    SPR[k] = c;
+  }
+  return SPR[k];
+}
+function drawAvatar(i, x, y, size, color){
+  ctx.save(); ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(sprite(((i|0)%AVATARS.length+AVATARS.length)%AVATARS.length, color), x, y, size, size);
+  ctx.restore();
+}
+const rawName = v => String(v==null?'':v).replace(/[^\p{L}\p{N} _\-.]/gu,'').slice(0,12);
+const cleanName = v => rawName(v).trim();
+const validAv = v => Number.isInteger(v) && v>=0 && v<AVATARS.length;
+
 // Tailles de grille (colonnes × lignes)
 const SIZES = [
   {k:'P',  n:'Petit',      c:12, r:6},
@@ -156,12 +211,16 @@ const CFG = {
 };
 
 // Réglages mémorisés pour ce visiteur (confort uniquement)
-const S = {size:{duo:'M',bots:'M',spectate:'M',host:'G'}, n:{bots:2,spectate:3,host:4}, c1:0, c2:1, color:0};
+const S = {size:{duo:'M',bots:'M',spectate:'M',host:'G'}, n:{bots:2,spectate:3,host:4}, c1:0, c2:1, color:0, name:'Joueur', av:0, name2:'Joueur 2', av2:1};
 try {
   const j = JSON.parse(localStorage.getItem('co2tanks.v1')||'null');
   if (j){
     for (const k of Object.keys(S.size)) if (SIZE[j.size?.[k]] && MODES[k].sizes.includes(j.size[k])) S.size[k]=j.size[k];
     for (const k of Object.keys(S.n)){ const v=j.n?.[k]; if (Number.isInteger(v) && v>=MODES[k].n[0] && v<=MODES[k].n[1]) S.n[k]=v; }
+    if (cleanName(j.name)) S.name = cleanName(j.name);
+    if (cleanName(j.name2)) S.name2 = cleanName(j.name2);
+    if (validAv(j.av)) S.av = j.av;
+    if (validAv(j.av2)) S.av2 = j.av2;
     for (const k of ['c1','c2','color']) if (Number.isInteger(j[k]) && j[k]>=0 && j[k]<10) S[k]=j[k];
   }
 } catch(e){}
@@ -246,7 +305,7 @@ function renderMazeCanvas(){
 // ---------- Chars ----------
 function makeTank(i, cfg){
   const present = !cfg.remote;
-  return {i, p:PAL[i%10], ci:i%10, pref:cfg.pref, label:cfg.label||'', keysets:cfg.keysets||null, bot:!!cfg.bot, remote:!!cfg.remote,
+  return {i, p:PAL[i%10], ci:i%10, pref:cfg.pref, label:cfg.label||'', av:cfg.av|0, keysets:cfg.keysets||null, bot:!!cfg.bot, remote:!!cfg.remote,
           present, active:present, alive:present, x:0, y:0, a:0, inp:{f:0,b:0,l:0,r:0}, ai:null, fireSeen:0, init:false};
 }
 function setupTanks(list){
@@ -456,7 +515,7 @@ function hostPre(){
   // libère les places des invités partis
   for (let i=1;i<tanks.length;i++){
     if (net.slots[i] && !guests.some(g=>g.peer===net.slots[i])){
-      net.slots[i]=null; const t=tanks[i]; t.present=false; t.active=false; t.alive=false; score[i]=0; changed=true;
+      net.slots[i]=null; const t=tanks[i]; t.label='Joueur '+(i+1); t.present=false; t.active=false; t.alive=false; score[i]=0; changed=true;
     }
   }
   // attribue une place aux nouveaux invités
@@ -473,6 +532,8 @@ function hostPre(){
     t.inp={f:k&1?1:0, b:k&2?1:0, l:k&4?1:0, r:k&8?1:0};
     const f=g.presence.f|0;
     if (f>t.fireSeen){ t.fireSeen=f; tryFire(t); } else t.fireSeen=f;
+    const nm = cleanName(g.presence.nm); if (nm && nm!==t.label) t.label = nm;
+    if (validAv(g.presence.av)) t.av = g.presence.av;
     const c=g.presence.c; const pref = Number.isInteger(c)?c:-1;
     if (pref!==t.pref){ t.pref=pref; changed=true; }
   }
@@ -495,9 +556,9 @@ function hostSend(){
   const b=[]; for (const x of bullets) b.push(r1(x.x),r1(x.y),r2(x.vx),r2(x.vy));
   net.room.presence({role:'host', sd:curSeed, g:[COLS,ROWS], st:state, sc:score,
     t:tanks.map(t=>[r1(t.x),r1(t.y),r2(t.a), !t.present?0 : !t.active?1 : !t.alive?2 : 3]),
-    cl:tanks.map(t=>t.ci), sl:tanks.map((t,i)=>i===0?'host':(net.slots[i]||null)), b}).catch(()=>{});
+    cl:tanks.map(t=>t.ci), nm:tanks.map(t=>t.label), av:tanks.map(t=>t.av), sl:tanks.map((t,i)=>i===0?'host':(net.slots[i]||null)), b}).catch(()=>{});
 }
-function sendGuest(){ net.room.presence({k:net.k, f:net.f, c:S.color}).catch(()=>{}); }
+function sendGuest(){ net.room.presence({k:net.k, f:net.f, c:S.color, nm:S.name, av:S.av}).catch(()=>{}); }
 
 function guestStep(){
   const h = net.room.peers().find(p=>!p.sameTab && p.presence.role==='host');
@@ -541,7 +602,8 @@ function applySnap(s){
     t.present = v[3]>0; t.active = v[3]>1; t.alive = v[3]===3;
     t.tx=v[0]; t.ty=v[1]; t.ta=v[2];
     t.ci = s.cl[i]; t.p = PAL[t.ci%10];
-    t.label = i===mine ? 'Vous' : 'Joueur '+(i+1);
+    t.label = cleanName(s.nm && s.nm[i]) || 'Joueur '+(i+1);
+    t.av = validAv(s.av && s.av[i]) ? s.av[i] : 0;
     if (fresh || !t.init || Math.hypot(t.tx-t.x,t.ty-t.y)>60){ t.x=t.tx; t.y=t.ty; t.a=t.ta; t.init=true; }
   });
   net.nb = [];
@@ -570,11 +632,11 @@ function startLocal(kind){
   nav++; net = null;
   const d = SIZE[S.size[kind]]; setGridDims(d.c,d.r);
   let list;
-  if (kind==='duo') list = [{keysets:[SET_A],label:'Joueur 1',pref:S.c1},{keysets:[SET_B],label:'Joueur 2',pref:S.c2}];
+  if (kind==='duo') list = [{keysets:[SET_A],label:S.name,av:S.av,pref:S.c1},{keysets:[SET_B],label:S.name2,av:S.av2,pref:S.c2}];
   else if (kind==='bots'){
-    list = [{keysets:[SET_A,SET_B],label:'Vous',pref:S.color}];
-    for (let i=0;i<S.n.bots;i++) list.push({bot:1,label:'Bot '+(i+1)});
-  } else { list = []; for (let i=0;i<S.n.spectate;i++) list.push({bot:1,label:'Bot '+(i+1)}); }
+    list = [{keysets:[SET_A,SET_B],label:S.name,av:S.av,pref:S.color}];
+    for (let i=0;i<S.n.bots;i++) list.push({bot:1,label:'Bot '+(i+1),av:BOT_AVS[i%BOT_AVS.length]});
+  } else { list = []; for (let i=0;i<S.n.spectate;i++) list.push({bot:1,label:'Bot '+(i+1),av:BOT_AVS[i%BOT_AVS.length]}); }
   setupTanks(list);
   myIdx = kind==='bots' ? 0 : -1;
   showView('game'); newRound();
@@ -593,8 +655,8 @@ async function startHost(name, code, isMm, dims, max){
     const room = await lobby.join(name);
     if (my!==nav){ room.leave().catch(()=>{}); return; }
     await room.presence({role:'host'});
-    const list = [{keysets:[SET_A,SET_B],label:'Vous',pref:S.color}];
-    for (let i=1;i<max;i++) list.push({remote:true,label:'Joueur '+(i+1)});
+    const list = [{keysets:[SET_A,SET_B],label:S.name,av:S.av,pref:S.color}];
+    for (let i=1;i<max;i++) list.push({remote:true,label:'Joueur '+(i+1),av:(i*3)%AVATARS.length});
     setupTanks(list); myIdx = 0;
     setGridDims(dims.c,dims.r);
     net = {role:'host', room, code, mm:isMm, tick:0, go:false, slots:Array(max).fill(null)};
@@ -609,7 +671,7 @@ async function startGuest(name, isMm){
   try {
     const room = await lobby.join(name);
     if (my!==nav){ room.leave().catch(()=>{}); return; }
-    await room.presence({role:'guest',k:0,f:0,c:S.color});
+    await room.presence({role:'guest',k:0,f:0,c:S.color,nm:S.name,av:S.av});
     tanks = []; curSeed = 0;
     const me = room.peers().find(p=>p.sameTab);
     net = {role:'guest', room, mm:isMm, k:0, f:0, seen:false, t0:performance.now(), nb:[], lastSnap:null, snapAt:0, myPeer: me ? me.peer : null};
@@ -681,6 +743,12 @@ function exitToMenu(msg){
 // ---------- Réglages ----------
 const swatches = (who, sel) => '<div class="swatches" data-who="'+who+'">' +
   COLOR_HEX.map((c,i)=>'<button type="button" class="sw" data-act="color" data-who="'+who+'" data-i="'+i+'" style="background:'+c+';--c:'+c+'" aria-pressed="'+(sel===i)+'" aria-label="'+COLOR_NAMES[i]+'"></button>').join('') + '</div>';
+function playerBlock(title, who){
+  const nk = who==='2' ? 'name2' : 'name', ak = who==='2' ? 'av2' : 'av', ck = who==='1' ? 'c1' : who==='2' ? 'c2' : 'color';
+  const avs = AVATARS.map((_,i)=>'<button type="button" class="av" data-act="avatar" data-key="'+ak+'" data-i="'+i+'" aria-pressed="'+(S[ak]===i)+'" aria-label="Avatar '+(i+1)+'"><canvas width="8" height="8" data-av="'+i+'"></canvas></button>').join('');
+  return '<h3>'+title+'</h3><input class="namebox" data-name="'+nk+'" maxlength="12" placeholder="Pseudo" autocomplete="off" spellcheck="false" aria-label="Pseudo" value="'+S[nk]+'">'
+    + '<div class="swh">Avatar</div><div class="avs">'+avs+'</div><div class="swh">Couleur du char</div>' + swatches(ck, S[ck]);
+}
 function renderSetup(){
   const m = setupMode, def = MODES[m];
   $('sTitle').textContent = def.title.toUpperCase();
@@ -701,15 +769,14 @@ function renderSetup(){
     if (m==='host') h += '<p class="note">Les invités rejoignent avec le code. Tu lances la partie avec Entrée quand vous êtes assez.</p>';
   } else if (m==='duo') h += '<h3>Joueurs</h3><p class="note">2 joueurs (limite hors ligne).</p>';
   else if (m==='random') h += '<h3>Joueurs</h3><p class="note">2 joueurs. La grille est tirée au sort.</p>';
-  if (m==='duo'){
-    h += '<h3>Couleur du joueur 1 (E D S F Q)</h3>' + swatches('c1',S.c1) + '<h3>Couleur du joueur 2 (flèches M)</h3>' + swatches('c2',S.c2);
-  } else if (m!=='spectate'){
-    h += '<h3>Couleur de ton char</h3>' + swatches('color',S.color);
-  }
+  if (m==='duo') h += playerBlock('Joueur 1 (E D S F Q)','1') + playerBlock('Joueur 2 (flèches M)','2');
+  else if (m!=='spectate') h += playerBlock('Ton profil','');
   if (m==='join'){
     h += '<h3>Code de la partie</h3><input id="code" class="codebox" maxlength="4" placeholder="CODE" autocomplete="off" spellcheck="false" aria-label="Code de la partie" value="'+(setupCode||'')+'">';
   }
   $('sRows').innerHTML = h;
+  $('sRows').querySelectorAll('canvas[data-av]').forEach(c => { const g=c.getContext('2d'); g.fillStyle='#e8e8ff';
+    AVATARS[Number(c.dataset.av)].forEach((row,y)=>{ for (let x=0;x<8;x++) if (row[x]==='#') g.fillRect(x,y,1,1); }); });
   if (m==='join'){ const el=$('code'); el.addEventListener('input',()=>{ el.value=el.value.toUpperCase().replace(/[^A-Z0-9]/g,''); setupCode=el.value; }); }
 }
 let setupCode = '';
@@ -719,6 +786,7 @@ $('sRows').addEventListener('click', e => {
   const m = setupMode, a = b.dataset.act;
   if (a==='size') S.size[m] = b.dataset.k;
   else if (a==='n'){ const [lo,hi]=MODES[m].n; S.n[m] = Math.max(lo, Math.min(hi, S.n[m]+Number(b.dataset.d))); }
+  else if (a==='avatar') S[b.dataset.key] = Number(b.dataset.i);
   else if (a==='color'){
     const who=b.dataset.who, i=Number(b.dataset.i);
     if (m==='duo'){
@@ -729,10 +797,15 @@ $('sRows').addEventListener('click', e => {
   }
   saveS(); renderSetup();
 });
+$('sRows').addEventListener('input', e => {
+  const k = e.target.dataset && e.target.dataset.name; if (!k) return;
+  S[k] = rawName(e.target.value); if (e.target.value!==S[k]) e.target.value = S[k]; saveS();
+});
 $('sGo').addEventListener('click', launch);
 $('sBack').addEventListener('click', () => { showView('menu'); });
 function launch(){
   const m = setupMode;
+  S.name = cleanName(S.name) || 'Joueur'; S.name2 = cleanName(S.name2) || 'Joueur 2'; saveS();
   if (m==='duo' || m==='bots' || m==='spectate') startLocal(m);
   else if (m==='random') startQueue();
   else if (m==='host') hostGame();
@@ -786,8 +859,10 @@ function drawHud(){
       ctx.font='22px '+PX; ctx.textAlign = left?'right':'left';
       ctx.fillStyle='#000'; ctx.fillText(v, tx+2, by+2);
       ctx.fillStyle=t.p.color; ctx.fillText(v, tx, by);
-      ctx.fillStyle='#8c8cc8'; ctx.font='17px '+VT; ctx.textAlign='center';
-      ctx.fillText(t.label.toUpperCase(), xs[i], by+30);
+      ctx.font='19px '+VT; ctx.textAlign='left';
+      const nmTxt = t.label.toUpperCase(), tw = ctx.measureText(nmTxt).width, lx = xs[i]-(tw+24)/2;
+      drawAvatar(t.av, lx, by+20, 18, t.p.color);
+      ctx.fillStyle = t.i===myIdx ? '#ffe14d' : '#b8b8e8'; ctx.fillText(nmTxt, lx+24, by+30);
     });
   } else {
     const perRow = Math.ceil(n/2), cw = GW/perRow;
@@ -799,8 +874,10 @@ function drawHud(){
       ctx.font='14px '+PX; ctx.textAlign='left';
       ctx.fillStyle='#000'; ctx.fillText(v, x0+44, y+1);
       ctx.fillStyle=t.p.color; ctx.fillText(v, x0+42, y-1);
-      ctx.fillStyle='#8c8cc8'; ctx.font='16px '+VT;
-      ctx.fillText(t.label.toUpperCase().slice(0,9), x0+44+Math.max(2,v.length)*14+4, y);
+      const ax = x0+44+Math.max(2,v.length)*14+2;
+      drawAvatar(t.av, ax, y-9, 18, t.p.color);
+      ctx.fillStyle = t.i===myIdx ? '#ffe14d' : '#b8b8e8'; ctx.font='17px '+VT;
+      ctx.fillText(t.label.toUpperCase().slice(0,10), ax+23, y);
     });
   }
 }
@@ -846,7 +923,13 @@ function draw(){
   if (state!=='wait') for (const t of tanks){
     if (!t.active) continue;
     if (view.cam && (t.x<view.x-40 || t.x>view.x+VP.w/view.s+40 || t.y<view.y-40 || t.y>view.y+VP.h/view.s+40)) continue;
-    if (t.alive) drawTank(t,t.x,t.y,t.a);
+    if (t.alive){
+      drawTank(t,t.x,t.y,t.a);
+      ctx.font='14px '+VT; ctx.textAlign='center'; ctx.textBaseline='middle';
+      const nt = t.label.toUpperCase(), ty = t.y-22;
+      ctx.lineWidth=3; ctx.strokeStyle='#0a0a1c'; ctx.strokeText(nt, t.x, ty);
+      ctx.fillStyle = t.p.color; ctx.fillText(nt, t.x, ty);
+    }
     else { drawTank(t,t.x,t.y,t.a,0.9,true); ctx.strokeStyle='#ff3d9a'; ctx.lineWidth=3; ctx.lineCap='butt';
       ctx.beginPath(); ctx.moveTo(t.x-8,t.y-8); ctx.lineTo(t.x+8,t.y+8); ctx.moveTo(t.x+8,t.y-8); ctx.lineTo(t.x-8,t.y+8); ctx.stroke(); }
   }
@@ -890,7 +973,7 @@ function frame(now){
 // ---------- Entrées ----------
 const norm = e => e.key.length===1 ? e.key.toLowerCase() : e.key;
 addEventListener('keydown', e => {
-  if (e.target && e.target.tagName==='INPUT'){ if (e.key==='Enter' && e.target.id==='code') launch(); return; }
+  if (e.target && e.target.tagName==='INPUT'){ if (e.key==='Enter' && (e.target.id==='code' || (e.target.dataset && e.target.dataset.name))) launch(); return; }
   if (state==='menu') return;
   const k = norm(e);
   if (k.startsWith('Arrow') || k===' ') e.preventDefault();
